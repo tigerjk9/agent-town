@@ -44,7 +44,8 @@ h3 small{font-weight:600;color:var(--dim)}
 .rt b{display:block;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rt span{display:block;font-size:11.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bd{font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:999px;flex:none;background:#eef2f8;color:var(--mute)}
-.bd.w{background:#e2f7ec;color:var(--ok)}.bd.q{background:#fff2d6;color:var(--warn)}.bd.x{background:#ffe3e9;color:var(--bad)}.bd.v{background:#e1f2ff;color:var(--sky)}
+.bd.w{background:#e2f7ec;color:var(--ok)}.bd.q{background:#fff2d6;color:var(--warn)}.bd.x{background:#ffe3e9;color:var(--bad)}.rules div{padding:3px 0;border-bottom:1px dashed #eef1f6}.rules div:last-child{border:0}
+.bd.v{background:#e1f2ff;color:var(--sky)}
 .feed div{font-size:12px;line-height:1.45;padding:5px 2px;border-bottom:1px dashed #e8edf5;color:#3a3f5a}
 .feed div:last-child{border:0}
 .feed time{color:var(--dim);font-family:ui-monospace,Menlo,monospace;font-size:11px;margin-right:6px}
@@ -400,8 +401,8 @@ function newVillager(k){const p=roadNode();return{x:p[0],y:p[1],tx:p[0],ty:p[1],
 const couriers=[],drones=[];
 function sendCourier(repoId,txt){const b=town.map.get(repoId);if(!b)return;
  if(b.island!=='city'){drones.push({x:0,y:0,z:40,tx:b.cx,ty:b.cy,tz:bldDims(b).top+8,txt,repo:repoId,t:0,done:false});return}
- const K=town.roadK,nx=K.reduce((a,v)=>Math.abs(v-(b.cx+2))<Math.abs(a-(b.cx+2))?v:a,K[0]),ny=K.reduce((a,v)=>Math.abs(v-(b.cy+2))<Math.abs(a-(b.cy+2))?v:a,K[0]);
- couriers.push({x:2,y:2,path:[[nx,2],[nx,ny],[b.cx,ny]],txt,repo:repoId,t:0})}
+ const mall=town.facilities.find(f=>f.t==='mall')||{cx:0,cy:0};const s0=nearestNode(mall.cx,mall.cy),e0=nearestNode(b.cx,b.cy);const path=roadPath(s0,e0).map(n=>[n[0],n[1]]);path.push([b.cx,b.cy+1.9]);
+ couriers.push({x:s0[0],y:s0[1],path,txt,repo:repoId,t:0})}
 
 /* =========================================================
    공장(안쪽 층)
@@ -568,7 +569,7 @@ let parts=[];const rockets=[];
 function confetti(wx,wy,z){for(let i=0;i<34;i++)parts.push({x:wx,y:wy,z:z||30,vx:rand(-1.4,1.4),vy:rand(-1.4,1.4),vz:rand(30,70),col:pick(AG_COL),life:1.6,kind:'conf'})}
 function smoke(wx,wy,z){parts.push({x:wx+rand(-.05,.05),y:wy+rand(-.05,.05),z,vx:rand(.05,.25),vy:rand(-.25,-.05),vz:rand(10,16),col:'#e9ecf3',life:2.4,kind:'smoke',r:rand(2,3.5)})}
 function launch(where,repoId){rockets.push({where,repo:repoId,z:0,v:0,t:0})}
-function fx(f){if(!f)return;const b=town.map.get(f.repo);
+function fx(f){if(!f)return;const b=town.map.get(f.repo);if(town.isl&&town.isl.airport)civicOnFx(f);
  if(f.kind==='push'){if(view==='town')sendCourier(f.repo,f.text)}
  if(f.kind==='rocket'){if(view==='factory'&&openRepo===f.repo){launch('fac',f.repo);setTimeout(()=>startParty(f.repo,'배포 성공 🚀'),1500)}else if(view==='town'&&b)launch('town',f.repo)}
  if(f.kind==='confetti'){if(view==='factory'&&openRepo===f.repo){const a=agents.get(f.agent);if(a&&a.pos)confetti(a.pos[0],a.pos[1],28);else confetti(5,10,30);setTimeout(()=>startParty(f.repo,'작업 완료 축하'),1200)}
@@ -589,15 +590,16 @@ function upAgent(p,instant){let a=agents.get(p.id);const isNew=!a;
  if(nowWork&&a.vacation)backFromVacation(a);
  if(nowWork&&a.act)endAct(a);
  if(view==='factory'&&a.repo===openRepo&&!a.vacation&&(isNew||oldRoom!==a.room||!a.pos||(nowWork&&oldStatus==='idle')))placeAgent(a,instant);
+ if(performance.now()>civicReadyAt)civicOnAgent(a,{conflict:oldConf,status:oldStatus,detail:oldDetail},isNew,instant);
  uiDirty=true}
 function apply(m){switch(m.type){
  case 'snapshot':repos.clear();(m.repos||[]).forEach(r=>repos.set(r.id,normRepo(r)));agents.clear();user=m.user||user;titleTxt=m.title||titleTxt;
-  logs=(m.log||[]).slice(0,200);stats=m.stats||stats;const oldR=town.R;layoutTown();if(view==='town'&&oldR!==town.R&&!trans)setTimeout(introCam,0);(m.agents||[]).forEach(a=>upAgent(a,true));
+  civicReadyAt=performance.now()+6000;logs=(m.log||[]).slice(0,200);stats=m.stats||stats;const oldR=town.R;layoutTown();if(view==='town'&&oldR!==town.R&&!trans)setTimeout(introCam,0);(m.agents||[]).forEach(a=>upAgent(a,true));
   if(view==='factory'&&!repos.has(openRepo))goTown(true);break;
- case 'repo':{const had=repos.has(m.repo.id);const old=repos.get(m.repo.id)||{};repos.set(m.repo.id,Object.assign(old,normRepo(Object.assign({},old,m.repo))));if(!had)layoutTown();break}
+ case 'repo':{const had=repos.has(m.repo.id);const prevIsl=(town.map.get(m.repo.id)||{}).island;const old=repos.get(m.repo.id)||{};repos.set(m.repo.id,Object.assign(old,normRepo(Object.assign({},old,m.repo))));if(!had)layoutTown();if(performance.now()>civicReadyAt)civicOnRepo(m.repo.id,had,prevIsl);break}
  case 'agent':upAgent(m.agent);break;
- case 'agent-remove':{const a=agents.get(m.id);if(a){releaseSpot(a);agents.delete(m.id);if(selAgent===m.id)selAgent=null}break}
- case 'log':logs.unshift(m.entry);if(logs.length>200)logs.length=200;break;
+ case 'agent-remove':{const a=agents.get(m.id);if(a){if(performance.now()>civicReadyAt)civicOnRemove(a);releaseSpot(a);agents.delete(m.id);if(selAgent===m.id)selAgent=null}break}
+ case 'log':logs.unshift(m.entry);if(logs.length>200)logs.length=200;if(performance.now()>civicReadyAt)civicOnLog(m.entry);break;
  case 'stats':stats=Object.assign(stats,m.stats);break;
  case 'fx':fx(m.fx);break}
  uiDirty=true}
@@ -643,10 +645,10 @@ const tip=$('tip');
 function hover(sx,sy){if(view==='town'){const v=pickVac(sx,sy);if(v){hoverBld=null;cv.classList.add('hand');tip.style.display='block';tip.style.left=(sx+14)+'px';tip.style.top=(sy+14)+'px';tip.innerHTML='<b>🏖 '+esc(v.name)+'</b> 휴가 중<br>'+esc(shortName(v.repo))+' 소속<br><span style="color:#6c7294">새 일이 들어오면 복귀해요 · 눌러서 공장 보기</span>';return}const b=pickBuilding(sx,sy);hoverBld=b?b.repo:null;cv.classList.toggle('hand',!!b);
   if(b){const r=repos.get(b.repo),n=busyCount(b.repo);tip.style.display='block';tip.style.left=(sx+14)+'px';tip.style.top=(sy+14)+'px';
    tip.innerHTML='<b>'+esc(r.name)+'</b>'+(r.fork?' <span style="color:#9da3c2">· 포크</span>':'')+(r.private?' 🔒':'')+'<br>'+(r.lang?esc(r.lang)+' · ':'')+'마지막 푸시 '+ago(r.pushedAt)+(n?'<br><span style="color:#3ddc84">● 에이전트 '+n+'명 작업 중</span>':'')+'<br><span style="color:#6c7294">눌러서 안으로 들어가기</span>'}
-  else tip.style.display='none'}
+  else{const f=pickFacility(sx,sy);if(f){cv.classList.add('hand');tip.style.display='block';tip.style.left=(sx+14)+'px';tip.style.top=(sy+14)+'px';tip.innerHTML='<b>'+f.ic+' '+esc(f.n)+'</b><br>'+esc(f.t==='hall'?'오늘의 시정 보고를 볼 수 있어요.':FAC_RULE[f.t]||'')+'<br><span style="color:#4f9a2c">'+esc(facStatus(f))+'</span>'}else tip.style.display='none'}}
  else{const a=pickAgent(sx,sy);cv.classList.toggle('hand',!!a);tip.style.display='none'}}
 function pickVac(sx,sy){const vac=town.vacNow||[];for(let i=0;i<vac.length;i++){const s=town.seats[i%town.seats.length];const q=S(s[0],s[1],4);if(Math.hypot(sx-q[0],sy-q[1])<Math.max(14,30*cam.s))return vac[i]}return null}
-function click(sx,sy){if(trans)return;if(view==='town'){const v=pickVac(sx,sy);if(v){tip.style.display='none';enterRepo(v.repo);return}const b=pickBuilding(sx,sy);if(b){tip.style.display='none';enterRepo(b.repo)}}
+function click(sx,sy){if(trans)return;if(view==='town'){const v=pickVac(sx,sy);if(v){tip.style.display='none';enterRepo(v.repo);return}const b=pickBuilding(sx,sy);if(b){tip.style.display='none';enterRepo(b.repo);return}const f=pickFacility(sx,sy);selFac=f||null;uiDirty=true}
  else{const cp=S(cat.pos[0],cat.pos[1],6);if(Math.hypot(sx-cp[0],sy-cp[1])<22*Math.max(cam.s,.7)){cat.say={text:'냥! 💕',until:performance.now()+2200};funStats.pets++;uiDirty=true;for(let i=0;i<6;i++)parts.push({x:cat.pos[0],y:cat.pos[1],z:12,vx:rand(-.4,.4),vy:rand(-.4,.4),vz:rand(14,24),col:'#ff6fb5',life:1.3,kind:'note',ch:'♥'});return}
   const a=pickAgent(sx,sy);selAgent=a?a.id:null;uiDirty=true}}
 
@@ -710,7 +712,7 @@ const kids=[],sitters=[],vendors=[],fishers=[],swimmers=[],ducks=[],players=[];l
 function setupTownLife(){const B=town.B,I=town.isl;ships.length=0;ferries.length=0;cars.length=0;shuttles.length=0;planesA.length=0;
  ships.push({type:'sail',path:loopAround(I.resort,3.5),u:0,sp:.5,col:'#ff6b6b'},{type:'sail',path:loopAround(I.fork,3.5).reverse(),u:.4,sp:.5,col:'#4cc3ff'},{type:'sail',path:loopAround(I.archive,3.5),u:.7,sp:.5,col:'#ffd34d'},{type:'sail',path:loopAround(I.city,4.5),u:.2,sp:.6,col:'#b38bff'},{type:'fish',x:-B-4,y:12});
 [0,1,2].forEach(k=>ships.push({type:'yacht',x:I.resort.x0-I.resort.m.l-2.6+k*.9,y:I.resort.y0+5.2+(k%2)*1.6,p:k}));
- ferries.push({ax:'x',a0:B+6.2,a1:I.fork.x0-I.fork.m.l-4.4,o:5.0,pos:B+6.2,dir:1,wait:0,name:'포크 마을행'},{ax:'y',a0:-B-6.2,a1:I.archive.y1+I.archive.m.b+4.4,o:5.0,pos:-B-6.2,dir:-1,wait:0,name:'추억의 섬행'});
+ ferries.push({ax:'x',a0:B+6.2,a1:I.fork.x0-I.fork.m.l-4.4,o:5.0,pos:B+6.2,dir:1,wait:performance.now()+3000,atHome:true,queue:[],nextAmb:performance.now()+25000,name:'포크 마을'},{ax:'y',a0:-B-6.2,a1:I.archive.y1+I.archive.m.b+4.4,o:5.0,pos:-B-6.2,dir:1,wait:performance.now()+3000,atHome:true,queue:[],nextAmb:performance.now()+45000,name:'추억의 섬'});
  const ncars=Math.min(42,10+town.segs.length/3);for(let k=0;k<ncars;k++){const n=roadNode();cars.push({x:n[0],y:n[1],from:n,to:n,u:1,sp:rand(2.2,3.4),col:pick(['#ff6b6b','#4cc3ff','#ffd34d','#ffffff','#36d6a0','#b38bff','#ff9f43','#2a2e45']),bus:k%9===0,taxi:k%7===3})}
  shuttles.push({ax:'y',a0:town.roadK[town.roadK.length-1],a1:I.resort.y0+1,o:2,pos:town.roadK[town.roadK.length-1],dir:1,col:'#ff9ec4',bus:true,wait:0},{ax:'x',a0:town.roadK[0],a1:I.airport.x1-1,o:2,pos:town.roadK[0],dir:-1,col:'#4cc3ff',bus:true,wait:0},{ax:'y',a0:town.roadK[town.roadK.length-1],a1:I.resort.y0+1,o:2,pos:I.resort.y0+1,dir:-1,col:'#ffd34d',wait:0},{ax:'x',a0:town.roadK[0],a1:I.airport.x1-1,o:2,pos:I.airport.x1-1,dir:1,col:'#ffffff',wait:0});
  const rr=town.E-.55;train={path:[[-rr,-rr],[rr,-rr],[rr,rr],[-rr,rr],[-rr,-rr]],u:0,x:0,y:0,stop:0};
@@ -766,6 +768,7 @@ function skyTick(t,dt){const cx=view==='town'?0:10,cy=view==='town'?0:7,L=view==
 function drawShadow(x,y,z,w){const p=S(x,y,z);ctx.fillStyle='rgba(20,40,80,.13)';ctx.beginPath();ctx.ellipse(p[0],p[1],w,w*.42,0,0,7);ctx.fill()}
 function drawSkyThings(t){const k=clamp(cam.s,.55,1.5);
  if(view==='town'){const w=worldRect(),bx=w.x0+balloon.u*(w.x1-w.x0),by=w.y1-balloon.u*(w.y1-w.y0)*.8,bz=140;drawShadow(bx,by,0,16*k);const q=S(bx,by,bz);drawBalloon(q[0],q[1],k,t);drawHeli(t)}
+ if(view==='town')civicSky(t,k);
  planes.forEach(p=>{drawShadow(p.x,p.y,0,14*k);const q=S(p.x,p.y,p.z);drawPlane(q[0],q[1],p.dir,k,p.txt,t)});
  if(view==='town'){const rs=town.isl.resort;for(let i=0;i<5;i++){const a=gulls.ang+i*.5,cx=Math.cos(a)*6,cy=rs.y1+3+Math.sin(a)*3;const q=S(cx,cy,70+i*4);const f=Math.sin(t/120+i)*3*k;
   ctx.strokeStyle='#ffffff';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(q[0]-6*k,q[1]-f);ctx.quadraticCurveTo(q[0]-2*k,q[1]-3*k,q[0],q[1]);ctx.quadraticCurveTo(q[0]+2*k,q[1]-3*k,q[0]+6*k,q[1]-f);ctx.stroke()}
@@ -797,7 +800,8 @@ function townDynamic(t,dt){const now=performance.now(),ph=dayPhase();skyTick(now
  const vis=[];
  shipList().forEach(s=>{if(s.type==='sail'){s.u=(s.u+s.sp*dt/pathLen(s.path))%1;vis.push({k:s.x+s.y,f:()=>drawSail(s,t)})}
   else if(s.type==='fish')vis.push({k:s.x+s.y,f:()=>drawFishBoat(s,t)});else if(s.type==='yacht')vis.push({k:s.x+s.y,f:()=>{const z=SEA_Z+Math.sin(t/500+s.p)*.7;box(ctx,s.x-.3,s.y-.9,s.x+.3,s.y+.9,z-1,3,'#ffffff');box(ctx,s.x-.22,s.y-.3,s.x+.22,s.y+.4,z+2,3,'#7fd3f2');box(ctx,s.x-.03,s.y-.03,s.x+.03,s.y+.03,z+2,18,'#cccccc')}})});
- ferries.forEach(f=>{if(f.wait){if(now>f.wait){f.wait=0;f.dir*=-1}}else{f.pos+=f.dir*2.2*dt*Math.sign(f.a1-f.a0);const end=f.dir>0?f.a1:f.a0;if((f.a1-f.a0)*(f.pos-end)*f.dir>=0){f.pos=end;f.wait=now+7000;say(f,f.dir>0?'⛴ '+f.name+' 도착~':'⛴ 코드 시티 도착~',2600)}}
+ ferries.forEach(f=>{if(f.wait){if(now>f.wait){if(f.atHome){if(f.queue.length||now>f.nextAmb){f.cargo=f.queue.shift()||null;f.dir=1;f.atHome=false;f.wait=0;f.nextAmb=now+rand(100000,160000);say(f,f.cargo?'⛴ '+f.cargo:'⛴ '+f.name+'행 출항',3200);if(f.cargo)civic.counts.ferry++}else f.wait=now+1000}else{f.wait=0;f.dir=-1}}}
+  else{f.pos+=f.dir*2.2*dt*Math.sign(f.a1-f.a0);const end=f.dir>0?f.a1:f.a0;if((f.a1-f.a0)*(f.pos-end)*f.dir>=0){f.pos=end;if(f.dir>0){f.wait=now+5000;say(f,f.cargo?'도착 · '+f.cargo:'⛴ '+f.name+' 도착~',2800)}else{f.wait=now+2500;f.atHome=true;say(f,'⛴ 코드 시티 도착~',2400)}}}
   vis.push({k:f.x+f.y,f:()=>drawFerry(f,t)})});
  cars.forEach(c=>{carStep(c,dt);vis.push({k:c.x+c.y,f:()=>drawCar(c)})});
  shuttles.forEach(s=>{if(s.wait){if(now>s.wait){s.wait=0;s.dir*=-1}}else{s.pos+=s.dir*3*dt;const lo=Math.min(s.a0,s.a1),hi=Math.max(s.a0,s.a1);if(s.pos<lo||s.pos>hi){s.pos=clamp(s.pos,lo,hi);s.wait=now+rand(2000,5000)}}
@@ -836,7 +840,8 @@ function townDynamic(t,dt){const now=performance.now(),ph=dayPhase();skyTick(now
  for(let i=drones.length-1;i>=0;i--){const d=drones[i];const dx=d.tx-d.x,dy=d.ty-d.y,dd=Math.hypot(dx,dy),sp=9*dt;if(dd<sp){if(!d.done){d.done=true;const b=town.map.get(d.repo);if(b)confettiSmall(b)}d.t+=dt;d.z+=dt*30;if(d.t>1.2)drones.splice(i,1)}else{d.x+=dx/dd*sp;d.y+=dy/dd*sp;d.z+=(d.tz-d.z)*Math.min(1,dt)}
   vis.push({k:d.x+d.y+5,f:()=>{box(ctx,d.x-.25,d.y-.25,d.x+.25,d.y+.25,d.z,1.2,'#2a2e45');[[-.3,-.3],[.3,-.3],[-.3,.3],[.3,.3]].forEach(([a,b])=>flat(ctx,d.x+a-.12,d.y+b-.12,d.x+a+.12,d.y+b+.12,d.z+1.6,'rgba(200,220,255,.7)'));if(!d.done)box(ctx,d.x-.12,d.y-.12,d.x+.12,d.y+.12,d.z-3,2.8,'#c08a55')}})}
  const vac=[...agents.values()].filter(a=>a.vacation).sort((a,b)=>a.id<b.id?-1:1);town.vacNow=vac;
- vac.forEach((a,i)=>{const s=town.seats[i%town.seats.length];vis.push({k:s[0]+s[1]+.1,f:()=>{const x=s[0],y=s[1]+.05;box(ctx,x-.11,y-.3,x+.11,y+.4,-.9,3,a.color);box(ctx,x-.13,y-.62,x+.13,y-.34,-.8,5,'#f3cba4');box(ctx,x-.14,y-.64,x+.14,y-.5,4.2,2,shade(a.color,-.45));quadX(ctx,x+.131,y-.58,y-.38,1.7,2.8,'#111')}})});
+ civicTown(t,dt,vis);
+ vac.forEach((a,i)=>{if(a.vacFly)return;const s=town.seats[i%town.seats.length];vis.push({k:s[0]+s[1]+.1,f:()=>{const x=s[0],y=s[1]+.05;box(ctx,x-.11,y-.3,x+.11,y+.4,-.9,3,a.color);box(ctx,x-.13,y-.62,x+.13,y-.34,-.8,5,'#f3cba4');box(ctx,x-.14,y-.64,x+.14,y-.5,4.2,2,shade(a.color,-.45));quadX(ctx,x+.131,y-.58,y-.38,1.7,2.8,'#111')}})});
  vis.sort((a,b)=>a.k-b.k).forEach(v=>v.f());
  if(ph!=='day'&&now>nextFw){const f=town.facilities.find(f=>f.t==='fun')||{cx:0,cy:0};nextFw=now+rand(1800,4200);const x=f.cx+rand(-3,3),y=f.cy+rand(-3,3),z=rand(110,160),col=pick(['#ff6b6b','#ffd34d','#36d6a0','#4cc3ff','#ff9ec4','#ffffff']);
   const ps=[];for(let k=0;k<26;k++){const a=k/26*6.283;ps.push({x,y,z,vx:Math.cos(a)*rand(2,3.2),vy:Math.sin(a)*rand(2,3.2)*.5,vz:Math.sin(a*3)*16+rand(-8,8),c:col})}fireworks.push({ps,life:1.6})}
@@ -899,7 +904,7 @@ function facDynamic(t,dt){const list=repoAgents(openRepo);const now=performance.
 function pill(x,y,text,bg,fg,bd,size){ctx.font='700 '+(size||11)+'px Pretendard,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif';const w=ctx.measureText(text).width+12,h=(size||11)+8;
  ctx.fillStyle=bg;ctx.beginPath();ctx.roundRect(x-w/2,y-h/2,w,h,5);ctx.fill();if(bd){ctx.strokeStyle=bd;ctx.lineWidth=1.5;ctx.stroke()}ctx.fillStyle=fg;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,x,y+.5);ctx.textAlign='left';ctx.textBaseline='alphabetic';return w}
 const S=(wx,wy,wz)=>{const p=P(wx,wy,wz);return[p[0]*cam.s+cam.ox,p[1]*cam.s+cam.oy]};
-function townLabels(t){const nowp=performance.now(),used=[];const hit=rc=>used.some(u=>rc[0]<u[2]&&rc[2]>u[0]&&rc[1]<u[3]&&rc[3]>u[1]);
+function townLabels(t){civicLabels(t);const nowp=performance.now(),used=[];const hit=rc=>used.some(u=>rc[0]<u[2]&&rc[2]>u[0]&&rc[1]<u[3]&&rc[3]>u[1]);
  const tag=(x,y,text,bg,fg,bd,size,force)=>{ctx.font='700 '+(size||11)+'px sans-serif';const w=ctx.measureText(text).width+16,rc=[x-w/2,y-11,x+w/2,y+11];if(!force&&hit(rc))return 0;used.push(rc);return pill(x,y,text,bg,fg,bd,size)};
  Object.entries(town.isl).forEach(([id,I])=>{if(id==='city')return;const n=town.bld.filter(b=>b.island===id).length;const p=S((I.x0+I.x1)/2,I.y0-I.m.t+.5,40);tag(p[0],p[1],I.name+(n?' · '+n:''),'#ffffff','#2a2e45','#ffcb47',13,true)});
  {const p=S(0,-town.E-1,60);tag(p[0],p[1],'🏙 '+(titleTxt||'코드 시티'),'#c6f432','#18200a',null,14,true)}
@@ -914,7 +919,7 @@ function townLabels(t){const nowp=performance.now(),used=[];const hit=rc=>used.s
  if(cam.s>.45){const lp=S(-town.B+1,-town.B+1,66);tag(lp[0],lp[1],'등대','rgba(255,255,255,.9)','#ef4466',null,10)}
  couriers.forEach(c=>{if(c.txt&&c.path.length){const p=S(c.x,c.y,24);pill(p[0],p[1],'📦 '+c.txt,'rgba(255,203,71,.97)','#3a2a00',null,10)}});
  drones.forEach(d=>{if(d.txt&&!d.done){const p=S(d.x,d.y,d.z+8);pill(p[0],p[1],'🚁 '+d.txt,'rgba(255,203,71,.97)','#3a2a00',null,10)}});
- if(cam.s>.6){const talk=[...villagers,...kids,...sitters,...vendors,...fishers,...ferries];if(train)talk.push(train);town.facilities.forEach(f=>{if(f.t==='stadium')talk.push(f)});let nb=0;
+ if(cam.s>.6){const talk=[...villagers,...kids,...sitters,...vendors,...fishers,...ferries];if(train)talk.push(train);town.facilities.forEach(f=>{if(f.t==='stadium'||f.t==='school')talk.push(f)});let nb=0;
   talk.forEach(v=>{if(!v.say||v.say.until<nowp||nb>7)return;const x=v.px!=null?v.px:v.x,y=v.py!=null?v.py:v.y;const z=ferries.includes(v)?SEA_Z+24:v===train?14:v.t==='stadium'?30:fishers.includes(v)?SEA_Z+25:v.kid?16:20;const q=S(x!=null?x:v.cx,y!=null?y:v.cy,z);bubble(q[0],q[1],v.say.text);nb++})}}
 function facLabels(t){Object.values(ROOMS).forEach(r=>{const p=S((r.x0+r.x1)/2,r.y0+.35,r.y0===0?30:18);pill(p[0],p[1],r.n,r.tag,'#1d2133',null,11)});
  const pr=S(22.2,11.3,48);pill(pr[0],pr[1],'발사대','rgba(255,255,255,.92)','#2b8fd6',null,10);
@@ -976,10 +981,10 @@ function startParty(repo,reason){const now=performance.now();if(view!=='factory'
  const list=repoAgents(repo).filter(a=>a.pos&&!a.vacation&&a.kind!=='actions');if(list.length<2)return;
  party={repo,until:now+15000,reason};lastParty[repo]=now;funStats.parties++;funLog(repo,'🎉 파티 타임! '+reason);
  let k=0;list.filter(a=>a.status==='idle').forEach(a=>{endAct(a);setAct(a,'party',[{to:LIFE.rug[k++%LIFE.rug.length],say:pick(['파티다!! 🎉','신난다~','음악 틀어!'])}],15000,{loop:DANCE})})}
-function goVacation(a){if(a.vacation)return;endAct(a);a.vacation=true;funStats.vacations++;
+function goVacation(a){if(a.vacation)return;endAct(a);a.vacation=true;funStats.vacations++;vacationFlight(a,false);
  if(view==='factory'&&openRepo===a.repo&&a.pos){a.leaving=true;releaseSpot(a);say(a,'🧳 휴가 다녀올게요~',3500);a.path=findPath(a.pos[0],a.pos[1],SPAWN[0],SPAWN[1])}
  funLog(a.repo,'🏖 '+a.name+' 휴가 출발');uiDirty=true}
-function backFromVacation(a){a.vacation=false;a.leaving=false;funLog(a.repo,'✈️ '+a.name+' 휴가 끝, 복귀!');
+function backFromVacation(a){vacationFlight(a,true);a.vacFly=false;a.vacation=false;a.leaving=false;funLog(a.repo,'✈️ '+a.name+' 휴가 끝, 복귀!');
  if(view==='factory'&&openRepo===a.repo){a.pos=SPAWN.slice();a.path=[];say(a,'✈️ 복귀했습니다!',3500)}else a.pos=null}
 const vacAfter=a=>mode==='demo'?32000+hash(a.id)%18000:vacationMin*60000;
 setInterval(()=>{const now=Date.now();agents.forEach(a=>{if(a.kind==='actions'||a.vacation||a.status!=='idle'||!a.idleSince)return;
@@ -1023,6 +1028,97 @@ function funCard(btn){const vac=[...agents.values()].filter(a=>a.vacation);const
 function mvpOf(repo){let best=null;repoAgents(repo).forEach(a=>{if((a.doneCount||0)>0&&(!best||a.doneCount>best.doneCount))best=a});return best&&best.id}
 
 /* =========================================================
+   도시의 의미: 사건 → 장소
+   ========================================================= */
+const civic={dispatch:[],flights:[],build:new Map(),counts:{amb:0,fire:0,police:0,deploy:0,trip:0,vac:0,arrive:0,ferry:0,move:0,cheer:0,school:0},cinema:'',walkers:new Map()};
+let selFac=null;const YEAR_MS=365*864e5;
+function catOf(r){return r.fork?'fork':(!r.local&&Date.now()-r.pushedAt>=YEAR_MS)?'archive':'city'}
+function facility(t){return town.facilities.find(f=>f.t===t)}
+function nearestNode(x,y){let best=null,bd=1e9;town.adj.forEach((v,k)=>{const [a,b]=k.split(',').map(Number);const d=Math.abs(a-x)+Math.abs(b-y);if(d<bd){bd=d;best=[a,b]}});return best||[2,2]}
+function roadPath(a,b){const K=n=>n[0]+','+n[1];const prev=new Map([[K(a),null]]);const q=[a];while(q.length){const n=q.shift();if(n[0]===b[0]&&n[1]===b[1])break;(town.adj.get(K(n))||[]).forEach(m=>{if(!prev.has(K(m))){prev.set(K(m),n);q.push(m)}})}
+ if(!prev.has(K(b)))return[b];const out=[];let c=b;while(c){out.unshift(c);c=prev.get(K(c))}return out}
+function airportPt(){const A=town.isl.airport;return[A.x0+4,A.y0+8]}
+function dispatch(kind,repoId,text){const b=town.map.get(repoId);if(!b||!town.adj)return;const now=performance.now();
+ const ex=civic.dispatch.find(d=>d.kind===kind&&d.repo===repoId);if(ex){ex.until=Math.max(ex.until,now+25000);return}
+ civic.counts[kind]++;
+ if(b.island!=='city'){drones.push({x:0,y:0,z:40,tx:b.cx,ty:b.cy,tz:bldDims(b).top+8,txt:text,repo:repoId,t:0,done:false});return}
+ const src=facility(kind==='amb'?'hospital':kind==='fire'?'fire':'police');if(!src)return;const s=nearestNode(src.cx,src.cy),e=nearestNode(b.cx,b.cy);
+ const path=roadPath(s,e).map(n=>[n[0],n[1]]);path.push([b.cx+(kind==='fire'?-.9:kind==='amb'?.9:0),b.cy+1.95]);
+ civic.dispatch.push({kind,repo:repoId,x:s[0],y:s[1],ax:'x',path,until:now+(kind==='police'?60000:25000),txt:text})}
+function flight(x0,y0,x1,y1,txt,onLand,o){o=o||{};civic.flights.push({x0,y0,x1,y1,t0:performance.now(),dur:o.dur||9000,txt,onLand,z:o.z||120,from0:o.from0!==false,to0:o.to0!==false})}
+function civicOnAgent(a,old,isNew,instant){if(instant||mode==='init')return;
+ if(isNew&&a.kind==='local'){civic.counts.arrive++;if(train)train.say={text:'🚆 '+a.name+' 출근 · '+shortName(a.repo),until:performance.now()+4000}}
+ if(a.conflict&&a.conflict!==old.conflict)dispatch('fire',a.repo,'🚒 충돌 진화: '+fname(a.conflict));
+ if(a.status==='failed'&&old.status!=='failed')dispatch('amb',a.repo,'🚑 '+a.name+' 실패 응급처치');
+ if(a.detail&&/^오류:/.test(a.detail)&&a.detail!==old.detail)dispatch('amb',a.repo,'🚑 '+a.detail);
+ if(a.status==='waiting'&&old.status!=='waiting'&&a.kind==='local')dispatch('police',a.repo,'🚓 승인 대기: '+a.name)}
+function civicOnRemove(a){if(a&&a.kind==='local'&&train)train.say={text:'🌙 '+a.name+' 퇴근',until:performance.now()+3500}}
+function civicOnRepo(id,had,prevIsland){if(mode==='init')return;const r=repos.get(id);if(!r)return;const now=performance.now();
+ if(!had){civic.build.set(id,now+90000);civic.counts.school++;const sc=facility('school');if(sc)sc.say={text:'🔔 새 입학생: '+r.name,until:now+5000};
+  if(r.fork){if(ferries[0])ferries[0].queue.push('🍴 새 포크 '+r.name)}else{const b=town.map.get(id);if(b){const [ax,ay]=airportPt();flight(ax-30,ay+30,ax,ay,'🛬 새 저장소 입주: '+r.name,null,{dur:7000,z:110,to0:true});civic.counts.arrive++}}
+  apply({type:'log',entry:{t:Date.now(),repo:id,text:(r.fork?'🍴 새 포크가 포크 마을에 들어왔어요':'🏗 새 저장소 입주! 공사 중'),kind:'create'}});return}
+ if(prevIsland&&prevIsland!==catOf(r)){civic.counts.move++;const msg=prevIsland==='archive'?'📼→🏙 '+r.name+' 추억의 섬에서 도심으로 이사':'🏙→📼 '+r.name+' 추억의 섬으로 이사';
+  if(ferries[1])ferries[1].queue.push(msg);apply({type:'log',entry:{t:Date.now(),repo:id,text:msg,kind:'move'}});layoutTown();civic.build.set(id,now+40000)}}
+function civicOnFx(f){const b=town.map.get(f.repo);
+ if(f.kind==='rocket'){civic.counts.deploy++;const [ax,ay]=airportPt();const pl=planesA[0];if(pl&&pl.state==='park'){pl.state='roll';pl.dir=-1}
+  flight(ax,ay-6,ax+40,ay-46,'🚀 '+shortName(f.repo)+' 배포 완료!',null,{dur:11000,z:170,from0:true,to0:false})}
+ if(f.kind==='push'&&b&&b.island==='fork'&&ferries[0])ferries[0].queue.push('📦 '+shortName(f.repo)+' 소식');
+ if(f.kind==='push'&&b&&b.island==='archive'&&ferries[1])ferries[1].queue.push('📼 '+shortName(f.repo)+' 소식');
+ if(f.kind==='trip'){const a=agents.get(f.agent),A=town.map.get(f.from),B=town.map.get(f.to);civic.counts.trip++;if(A&&B)flight(A.cx,A.cy,B.cx,B.cy,'✈ '+(a?a.name:'에이전트')+' 출장: '+shortName(f.from)+' → '+shortName(f.to),null,{dur:8000,z:130})}}
+function civicOnLog(e){if(!e)return;if(e.kind==='pr'&&/병합/.test(e.text)){civic.counts.cheer++;const st=facility('stadium');if(st){st.say={text:'⚽ PR 병합 골인!!',until:performance.now()+4000};confetti(st.cx,st.cy,24)}}
+ if(e.kind==='push'||e.kind==='pr'||e.kind==='release')civic.cinema=(e.repo?shortName(e.repo)+' · ':'')+e.text.replace(/^\S+\s/,'').slice(0,34)}
+function vacationFlight(a,back){if(!town.seats||!town.isl.airport)return;const [ax,ay]=airportPt();const vac=[...agents.values()].filter(x=>x.vacation).sort((p,q)=>p.id<q.id?-1:1);const i=Math.max(0,vac.indexOf(a));const s=town.seats[i%town.seats.length];civic.counts.vac++;
+ if(back)flight(s[0],s[1],ax,ay,'✈️ '+a.name+' 휴가 끝, 복귀',null,{dur:8000,z:120});else{a.vacFly=true;flight(ax,ay,s[0],s[1],'🏖 '+a.name+' 휴가 출발',()=>{a.vacFly=false},{dur:8000,z:120})}}
+/* 그리기 */
+function civicTown(t,dt,vis){const now=performance.now();
+ for(let i=civic.dispatch.length-1;i>=0;i--){const d=civic.dispatch[i];const tg=d.path[0];
+  if(tg){const dx=tg[0]-d.x,dy=tg[1]-d.y,dd=Math.hypot(dx,dy),sp=5*dt;if(Math.abs(dx)>Math.abs(dy))d.ax='x';else if(dd>.01)d.ax='y';if(dd<=sp){d.x=tg[0];d.y=tg[1];d.path.shift()}else{d.x+=dx/dd*sp;d.y+=dy/dd*sp}}
+  else{d.arrived=true;if(d.kind==='fire'&&Math.random()<dt*20){const b=town.map.get(d.repo);if(b)parts.push({x:d.x,y:d.y,z:9,vx:(b.cx-d.x)*.9,vy:(b.cy-d.y)*.9,vz:rand(18,28),col:'#7fd3f2',life:.9,kind:'conf'})}}
+  const stillWaiting=d.kind==='police'&&[...agents.values()].some(a=>a.repo===d.repo&&a.status==='waiting');
+  if(now>d.until&&!stillWaiting){civic.dispatch.splice(i,1);continue}
+  if(d.kind==='police'&&d.arrived&&!stillWaiting&&now>d.until-50000)d.until=Math.min(d.until,now+3000);
+  vis.push({k:d.x+d.y,f:()=>drawVehicle(d,t)})}
+ civic.build.forEach((until,id)=>{if(now>until){civic.build.delete(id);return}const b=town.map.get(id);if(!b)return;vis.push({k:b.cx+b.cy+2,f:()=>drawCrane(b,t)})});
+ const park=facility('park');if(park){const idle=[...agents.values()].filter(a=>a.kind==='local'&&a.status==='idle'&&!a.vacation).slice(0,10);town.parkWalkers=idle;
+  idle.forEach((a,i)=>{let w=civic.walkers.get(a.id);if(!w){w={ang:i*.7};civic.walkers.set(a.id,w)}w.ang+=dt*.18;const x=park.cx+Math.cos(w.ang)*2.95,y=park.cy+Math.sin(w.ang)*2.35;w.x=x;w.y=y;vis.push({k:x+y,f:()=>mini(x,y,a.color,t,true,{hair:shade(a.color,-.45)})})})}}
+function drawVehicle(d,t){const x=d.x,y=d.y,X=d.ax==='x',L=d.kind==='fire'?.75:.5,W=.24,col=d.kind==='amb'?'#ffffff':d.kind==='fire'?'#e53b3b':'#ffffff';ellipse(ctx,x,y,.45,'rgba(0,0,0,.15)');
+ if(X)box(ctx,x-L,y-W,x+L,y+W,.6,3.4,col);else box(ctx,x-W,y-L,x+W,y+L,.6,3.4,col);
+ if(d.kind==='amb'){X?quadY(ctx,x-L,x+L,y+W,2,2.8,'#ff5d6c'):quadX(ctx,x+W,y-L,y+L,2,2.8,'#ff5d6c')}
+ if(d.kind==='police'){X?quadY(ctx,x-L,x+L,y+W,1.6,2.6,'#3b7fd4'):quadX(ctx,x+W,y-L,y+L,1.6,2.6,'#3b7fd4')}
+ if(d.kind==='fire'){X?box(ctx,x-L*.8,y-.08,x+L*.6,y+.08,4,.6,'#dddddd'):box(ctx,x-.08,y-L*.8,x+.08,y+L*.6,4,.6,'#dddddd')}
+ const on=Math.floor(t/180)%2;box(ctx,x-.08,y-.08,x+.08,y+.08,4,1.2,on?'#ff3b3b':(d.kind==='police'?'#3b7fff':'#ffffff'))}
+function drawCrane(b,t){const {s,h}=bldDims(b),x=b.cx+s+.5,y=b.cy-s-.3,H=Math.max(30,h+16);box(ctx,x-.12,y-.12,x+.12,y+.12,0,H,'#ffcb47');const a=t/2400;const ex=x+Math.cos(a)*2.4,ey=y+Math.sin(a)*1.4;
+ const p=P(x,y,H),q=P(ex,ey,H);ctx.strokeStyle='#ffb020';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();const r=P(ex,ey,H-14);ctx.strokeStyle='#555';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(q[0],q[1]);ctx.lineTo(r[0],r[1]);ctx.stroke();box(ctx,ex-.15,ey-.15,ex+.15,ey+.15,H-17,3,'#c08a55');
+ [[b.cx-s-.15,b.cy+s+.15],[b.cx+s+.15,b.cy+s+.15]].forEach(([px,py])=>box(ctx,px-.04,py-.04,px+.04,py+.04,0,h*.9,'#ffb020'))}
+function civicSky(t,k){const now=performance.now();for(let i=civic.flights.length-1;i>=0;i--){const f=civic.flights[i];let u=(now-f.t0)/f.dur;if(u>=1){civic.flights.splice(i,1);f.onLand&&f.onLand();continue}
+  const e=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2,x=f.x0+(f.x1-f.x0)*e,y=f.y0+(f.y1-f.y0)*e;let z=f.z;if(f.from0&&u<.25)z=f.z*(u/.25);if(f.to0&&u>.75)z=f.z*((1-u)/.25);
+  const a=S(f.x0,f.y0,0),b=S(f.x1,f.y1,0);const dir=b[0]>=a[0]?1:-1;drawShadow(x,y,0,12*k);const q=S(x,y,Math.max(4,z));drawPlane(q[0],q[1],dir,k*.9,f.txt,t)}}
+const FAC_RULE={hall:'도시 전체의 오늘 기록을 보여 줘요.',hospital:'빌드·테스트가 실패하거나 도구 오류가 나면 구급차가 출동해요.',fire:'두 에이전트가 같은 파일을 동시에 고치면(충돌) 소방차가 불을 끄러 가요.',police:'에이전트가 권한 승인을 기다리면 경찰차가 가서 알려 줘요. 승인되면 돌아와요.',
+ library:'에이전트가 검색·웹 읽기·파일 읽기를 하는 동안 도서관이 붐벼요.',station:'새 Claude Code 세션이 시작되면 출근 안내, 끝나면 퇴근 안내를 해요.',mall:'푸시가 일어나면 여기서 택배 기사가 출발해요.',cinema:'최근 푸시·PR 소식을 상영해요.',stadium:'PR이 병합되면 골! 관중이 환호해요.',
+ fun:'작업 완료·배포 성공 때 공장에서 파티가 열리고, 밤에는 불꽃놀이를 해요.',park:'쉬고 있는 에이전트들이 여기서 산책해요. 오래 쉬면 휴가를 떠나요.',school:'새 저장소가 생기면 입학 종이 울리고, 공사 크레인이 세워져요.'};
+function researchCount(){return [...agents.values()].filter(a=>a.status==='working'&&/^(검색:|웹 읽기|읽는 중)/.test(a.detail||'')).length}
+function facStatus(f){const c=civic.counts;switch(f.t){case 'hospital':return '오늘 출동 '+c.amb+'회';case 'fire':return '오늘 출동 '+c.fire+'회';case 'police':return '출동 '+c.police+'회 · 지금 대기 '+[...agents.values()].filter(a=>a.status==='waiting').length+'명';
+ case 'library':return '지금 조사 중 '+researchCount()+'명';case 'station':return '출근 '+c.arrive+'회';case 'stadium':return 'PR 병합 골 '+c.cheer+'회';case 'cinema':return civic.cinema?'상영 중: '+civic.cinema:'상영 대기 중';case 'park':return '산책 중 '+((town.parkWalkers||[]).length)+'명';case 'school':return '입학 '+c.school+'명';case 'mall':return '오늘 푸시 '+(stats.pushesToday||0)+'건';default:return ''}}
+function hallBrief(){const today=new Date().toDateString(),L=logs.filter(l=>new Date(l.t).toDateString()===today);const cnt=k=>L.filter(l=>l.kind===k).length;const busy={};L.forEach(l=>{if(l.repo)busy[l.repo]=(busy[l.repo]||0)+1});const top=Object.entries(busy).sort((a,b)=>b[1]-a[1])[0];
+ const mvp=[...agents.values()].filter(a=>a.doneCount).sort((x,y)=>y.doneCount-x.doneCount)[0];
+ return '<div>📦 푸시 '+(stats.pushesToday||0)+' · ✅ 완료 '+cnt('done')+' · 🔀 PR '+cnt('pr')+'</div><div>🚀 배포 비행 '+civic.counts.deploy+' · ❌ 실패 '+cnt('fail')+' · ⚠️ 충돌 '+cnt('conflict')+'</div>'+(top?'<div>🏆 가장 바쁜 곳: <b>'+esc(shortName(top[0]))+'</b> ('+top[1]+'건)</div>':'')+(mvp?'<div>👑 MVP: <b>'+esc(mvp.name)+'</b> · 완료 '+mvp.doneCount+'건</div>':'')}
+function facCard(){if(!selFac)return '';const f=selFac;return '<div class="card"><h3>'+f.ic+' '+f.n+' <small style="cursor:pointer" id="facClose">닫기</small></h3><div class="det">'+(f.t==='hall'?hallBrief():esc(FAC_RULE[f.t]||'')+'<div style="margin-top:6px;color:#4f9a2c;font-weight:700">'+esc(facStatus(f))+'</div>')+'</div></div>'}
+function rulesCard(){const c=civic.counts;return '<div class="card"><h3>🗺 도시 규칙 <small>건물을 눌러 보세요</small></h3><div class="det rules">'+
+ '<div>✈️ <b>공항</b> 배포 성공 비행 '+c.deploy+' · 휴가·복귀 비행 '+c.vac+' · 출장 '+c.trip+'</div>'+
+ '<div>🏖 <b>휴양 섬</b> '+vacationMin+'분 넘게 쉰 에이전트의 휴가지</div>'+
+ '<div>🍴 <b>포크 마을</b> 포크한 저장소 · 새 포크·소식은 여객선으로</div>'+
+ '<div>📼 <b>추억의 섬</b> 1년 넘게 쉰 저장소 · 다시 작업하면 도심으로 이사 ('+c.move+')</div>'+
+ '<div>🚑 실패 '+c.amb+' · 🚒 충돌 '+c.fire+' · 🚓 승인 대기 '+c.police+'</div>'+
+ '<div>🚉 출근 '+c.arrive+' · 🏟 PR 병합 '+c.cheer+' · 🏫 새 저장소 '+c.school+'</div></div></div>'}
+function pickFacility(sx,sy){let best=null,bd=1e9;(town.facilities||[]).forEach(f=>{const q=S(f.cx,f.cy,f.big?8:12);const d=Math.hypot(sx-q[0],sy-q[1]);const r=(f.big?110:46)*cam.s;if(d<r&&d<bd){bd=d;best=f}});return best}
+function civicLabels(t){if(cam.s>.5){civic.dispatch.forEach(d=>{const q=S(d.x,d.y,14);pill(q[0],q[1],d.txt,d.kind==='fire'?'#ff5d6c':d.kind==='amb'?'#ffffff':'#3b7fd4',d.kind==='amb'?'#e53b3b':'#ffffff',d.kind==='amb'?'#ff5d6c':null,10)});
+ const lib=facility('library'),n=researchCount();if(lib&&n){const q=S(lib.cx,lib.cy,26);pill(q[0],q[1]-18,'📚 조사 중 '+n,'#7fa86a','#ffffff',null,10)}
+ const cin=facility('cinema');if(cin&&civic.cinema&&cam.s>.75){const q=S(cin.cx,cin.cy,24);pill(q[0],q[1]-18,'🎬 '+civic.cinema,'#4b3b7a','#ffd34d',null,10)}
+ if(cam.s>.75)(town.parkWalkers||[]).forEach(a=>{const w=civic.walkers.get(a.id);if(!w||w.x==null)return;const q=S(w.x,w.y,22);pill(q[0],q[1],a.name,'rgba(255,255,255,.95)','#2a2e45',a.color,9)})}
+ civic.build.forEach((u,id)=>{const b=town.map.get(id);if(!b)return;const q=S(b.cx,b.cy,bldDims(b).top+30);pill(q[0],q[1],'🏗 공사 중','#ffcb47','#3a2a00',null,10)});
+ if(selFac){const q=S(selFac.cx,selFac.cy,selFac.big?30:36);pill(q[0],q[1]-24,'👆 '+selFac.n,'#2a2e45','#ffffff',null,11)}}
+let civicReadyAt=0;
+/* =========================================================
    사이드바·헤더
    ========================================================= */
 const ST_TXT={working:['작업 중','w'],waiting:['대기','q'],idle:['휴식',''],failed:['실패','x'],done:['완료','']};
@@ -1038,10 +1134,10 @@ function renderUI(){const all=[...agents.values()];const working=all.filter(a=>a
   const busyRepos=new Set(all.filter(a=>a.status==='working'||a.status==='waiting').map(a=>a.repo));
   $('stats').innerHTML=dayChip()+stat('#9da3c2','저장소',repos.size)+stat('#c6f432','바쁜 곳',busyRepos.size)+stat('#3ddc84','일하는 에이전트',working)+stat('#ffb020','대기',waiting)+stat('#38bdf8','오늘 푸시',stats.pushesToday||0);
   const list=[...repos.values()].map(r=>({r,n:busyCount(r.id),a:repoAgents(r.id)})).sort((x,y)=>(y.n-x.n)||(y.r.pushedAt-x.r.pushedAt)).slice(0,10);
-  $('panel').innerHTML='<div class="card"><h3>지금 바쁜 저장소 <small>눌러서 들어가기</small></h3>'+list.map(({r,n,a})=>{
+  $('panel').innerHTML=facCard()+'<div class="card"><h3>지금 바쁜 저장소 <small>눌러서 들어가기</small></h3>'+list.map(({r,n,a})=>{
     const w=a.find(x=>x.status==='working');const sub=n?(n+'명 · '+(w?(ROOMS[w.room]||ROOMS.lounge).n+'에서 '+(w.detail||''):'대기 중')):'마지막 푸시 '+ago(r.pushedAt);
     return '<div class="row" data-repo="'+esc(r.id)+'"><div class="av bld" style="background:'+roofColor(r)+'">'+(n?'🏭':'🏠')+'</div><div class="rt"><b>'+esc(r.name)+'</b><span>'+esc(sub)+'</span></div>'+(n?'<span class="bd w">'+n+'</span>':'')+'</div>'}).join('')+'</div>'+
-   funCard(true)+'<div class="card"><h3>최근 활동</h3><div class="feed">'+feedHTML(logs.slice(0,14),true)+'</div></div>'}
+   rulesCard()+funCard(true)+'<div class="card"><h3>최근 활동</h3><div class="feed">'+feedHTML(logs.slice(0,14),true)+'</div></div>'}
  else{const r=repos.get(openRepo);if(!r)return;const list=repoAgents(openRepo);$('ttl').textContent=r.name;$('sub').textContent=r.id;
   const w=list.filter(a=>a.status==='working').length,q=list.filter(a=>a.status==='waiting').length;
   $('stats').innerHTML=dayChip()+stat('#3ddc84','일하는 중',w)+stat('#ffb020','대기',q)+stat('#c6f432','완료',r.done||0)+stat('#9da3c2','에이전트',list.length);
@@ -1052,6 +1148,7 @@ function renderUI(){const all=[...agents.values()];const working=all.filter(a=>a
     const pn=a.act&&a.act.partner&&agents.get(a.act.partner);const sub=a.vacation?'🏖 휴양지에서 쉬는 중':a.act?ACT_TXT[a.act.type]+(pn?' · '+esc(pn.name):''):(ROOMS[a.room]||ROOMS.lounge).n+(a.detail?' · '+esc(a.detail):'');
     return '<div class="row'+(selAgent===a.id?' sel':'')+'" data-agent="'+esc(a.id)+'"><div class="av" style="background:'+(a.kind==='actions'?'#9aa3b5':a.color)+'"></div><div class="rt"><b>'+(mvpOf(openRepo)===a.id?'👑 ':'')+esc(a.name)+'</b><span>'+sub+'</span></div><span class="bd '+(a.conflict?'x':a.vacation?'v':st[1])+'">'+(a.conflict?'충돌':a.vacation?'휴가':st[0])+'</span></div>'}).join(''):'<div class="empty">지금 이 저장소에서 일하는 에이전트가 없어요. 이 폴더에서 Claude Code를 실행하거나 GitHub Actions가 돌면 여기 나타나요.</div>')+'</div>'+
    funCard()+'<div class="card"><h3>이 저장소의 활동</h3><div class="feed">'+feedHTML(logs.filter(l=>l.repo===openRepo).slice(0,12),false)+'</div></div>'}
+ const fcl=$('facClose');if(fcl)fcl.onclick=()=>{selFac=null;uiDirty=true};
  const db=$('dayBtn');if(db)db.onclick=()=>{const m=['auto','day','dusk','night'];dayMode=m[(m.indexOf(dayMode)+1)%m.length];uiDirty=true};
  const gr=$('goResort');if(gr)gr.onclick=()=>{const rs=town.resort,p=P(0,(rs.y0+rs.y1)/2,0),s=Math.max(cam.s,1.05);animCam({s,ox:(VW-sideW())/2-p[0]*s,oy:VH/2-p[1]*s},700)};
  $('panel').querySelectorAll('[data-repo]').forEach(el=>el.onclick=()=>{const id=el.dataset.repo;const b=town.map.get(id);if(b)enterRepo(id)});
@@ -1085,6 +1182,7 @@ function ghEvent(e,live){const repo=e.repo&&e.repo.name;if(!repo)return;if(!repo
  else if(e.type==='PullRequestEvent'){const pr=p.pull_request||{},no=p.number||pr.number;if(p.action==='opened')say('🔀 PR 열림 #'+no+' '+(pr.title||''),'pr');else if(p.action==='closed'&&pr.merged){say('🎉 PR 병합 #'+no+' '+(pr.title||''),'pr');if(live)apply({type:'fx',fx:{kind:'confetti',repo}})}}
  else if(e.type==='ReleaseEvent'){say('🚀 릴리스 '+((p.release&&(p.release.name||p.release.tag_name))||''),'release');if(live)apply({type:'fx',fx:{kind:'rocket',repo}})}
  else if(e.type==='CreateEvent'){if(p.ref_type==='repository')say('🏗 새 저장소','create');else if(p.ref_type==='branch')say('🌿 새 브랜치 '+p.ref,'create')}
+ else if(e.type==='ForkEvent'){say('🍴 포크함 → '+((p.forkee&&p.forkee.full_name)||''),'fork');if(live&&p.forkee&&p.forkee.full_name&&!repos.has(p.forkee.full_name))apply({type:'repo',repo:{id:p.forkee.full_name,name:p.forkee.name,fork:true,pushedAt:Date.now(),url:p.forkee.html_url}})}
  else if(e.type==='WatchEvent')say('⭐ 스타 받음','star');else if(e.type==='IssuesEvent'&&p.action==='opened')say('📝 이슈 열림','issue')}
 async function ghPollEvents(first){const u=GHB.user;const d=await ghGet('/users/'+u+'/events?per_page=50');const sorted=d.slice().sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:1);
  if(first){stats.pushesToday=0;sorted.filter(e=>Date.now()-Date.parse(e.created_at)<48*36e5).forEach(e=>ghEvent(e,false));logs.sort((a,b)=>b.t-a.t);
@@ -1266,6 +1364,11 @@ function startDemo(){mode='demo';
  actions(R('school-life-record'),'CI',[['build','npm ci && build',4000],['verify','vitest',4500]],[15000,30000]);
  actions(R('Live-Artifact'),'e2e',[['build','빌드',3500],['verify','Playwright e2e',6000]],[20000,40000]);
  cloud(R('vibecoding-lecture'));cloud(R('PDF-Office'));
+ setTimeout(()=>{apply({type:'repo',repo:{id:U+'/new-idea-lab',name:'new-idea-lab',pushedAt:Date.now(),lang:'TypeScript',desc:'새로 만든 저장소(데모)'}})},26000);
+ setTimeout(()=>{apply({type:'repo',repo:{id:U+'/awesome-agents',name:'awesome-agents',fork:true,pushedAt:Date.now()}});L(U+'/awesome-agents','🍴 포크함','fork')},52000);
+ setTimeout(()=>{apply({type:'repo',repo:{id:U+'/face_mosaic',pushedAt:Date.now()}});L(U+'/face_mosaic','📦 푸시 → main · 오랜만의 커밋','push')},80000);
+ (async()=>{for(;;){await sleep(rand(35000,60000));const r=pick([...repos.values()].filter(r=>!r.fork).slice(0,12));L(r.id,'🎉 PR 병합 #'+randi(10,90)+' '+pick(['다크 모드','퀴즈 타이머 수정','모바일 레이아웃','README 개선']),'pr');apply({type:'fx',fx:{kind:'confetti',repo:r.id}})}})();
+ (async()=>{for(;;){await sleep(rand(55000,90000));const hot=[R('Live-Artifact'),R('vibecoding-lecture'),R('riasec-career-cards'),R('tigerjk9.github.io')];const a=pick([...agents.values()].filter(a=>a.kind==='local'));if(!a)continue;const to=pick(hot.filter(h=>h!==a.repo));apply({type:'fx',fx:{kind:'trip',agent:a.id,from:a.repo,to}});L(to,'✈ '+a.name+' 출장: '+shortName(a.repo)+' → '+shortName(to),'trip')}})();
  (async()=>{for(;;){await sleep(rand(7000,14000));const list=[...repos.values()].filter(r=>!r.fork).slice(4,30);const r=pick(list);
   apply({type:'fx',fx:{kind:'push',repo:r.id,text:'커밋 '+randi(1,3)}});bump(r.id);L(r.id,'📦 푸시: 커밋 '+randi(1,3)+'개','push')}})()}
 
@@ -1278,7 +1381,7 @@ layoutTown();Object.assign(cam,fitCam(townBounds()));
 function introCam(){Object.assign(cam,fitCam(cityBounds()));const cx=(VW-sideW())/2,cy=VH/2+40;zoomAt(cx,cy,1.05);const p=P(0,0,0);cam.ox=cx-p[0]*cam.s;cam.oy=cy-p[1]*cam.s}
 connect().then(introCam);
 requestAnimationFrame(frame);
-window.__town={repos,agents,findPath,SPOTS,SPAWN,blocked,enterRepo,goTown,apply,LIFE,startParty,goVacation,cam,get view(){return view}};
+window.__town={repos,agents,findPath,SPOTS,SPAWN,blocked,enterRepo,goTown,apply,LIFE,startParty,goVacation,cam,civic,dispatch,flight,get town(){return town},get view(){return view}};
 </script>
 </body>
 </html>

@@ -139,6 +139,12 @@ async function handleHook(p) {
     a = upAgent(id, { repo, name, baseName: name.replace(/ #\d+$/, ''), kind: 'local', room: 'lounge', status: 'idle', detail: '출근' });
     addLog(repo, '👋 ' + a.name + ' 출근', 'start');
   }
+  if (a.repo !== repo) {
+    const from = a.repo;
+    a = upAgent(id, { repo });
+    send({ type: 'fx', fx: { kind: 'trip', agent: id, from, to: repo } });
+    addLog(repo, '✈ ' + a.name + ' 출장: ' + from.split('/').pop() + ' → ' + repo.split('/').pop(), 'trip');
+  }
   const ev = p.hook_event_name, tool = p.tool_name || '', ti = p.tool_input || {};
   const rel = f => f ? (p.cwd && f.startsWith(p.cwd) ? f.slice(p.cwd.length).replace(/^[\\/]+/, '') : f).replace(/\\/g, '/') : '';
   const keepRoom = () => (a.room === 'lounge' || !a.room ? 'dev' : a.room);
@@ -265,7 +271,15 @@ function handleEvent(e, live) {
       break;
     case 'ReleaseEvent': say('🚀 릴리스 ' + ((p.release && (p.release.name || p.release.tag_name)) || ''), 'release'); if (live) send({ type: 'fx', fx: { kind: 'rocket', repo } }); break;
     case 'WatchEvent': say('⭐ 스타 받음', 'star'); break;
-    case 'ForkEvent': say('🍴 포크됨', 'fork'); break;
+    case 'ForkEvent': {
+      const fk = p.forkee;
+      say('🍴 포크함 → ' + ((fk && fk.full_name) || ''), 'fork');
+      if (live && fk && fk.full_name && !findRepoId(fk.full_name)) {
+        const r = { id: fk.full_name, name: fk.name, fork: true, private: !!fk.private, pushedAt: Date.now(), lang: fk.language || null, desc: fk.description || '', url: fk.html_url, done: 0, local: false };
+        repos.set(r.id, r); send({ type: 'repo', repo: r });
+      }
+      break;
+    }
     case 'IssuesEvent': if (p.action === 'opened') say('📝 이슈 열림 #' + (p.issue && p.issue.number), 'issue'); break;
     case 'IssueCommentEvent': say('💬 댓글', 'comment'); break;
     case 'DeleteEvent': say('🧹 ' + p.ref_type + ' 삭제 ' + (p.ref || ''), 'delete'); break;
