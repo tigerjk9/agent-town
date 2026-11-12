@@ -1,0 +1,12 @@
+{
+  "title": "닷커넥터의 코드 마을",
+  "githubUser": "tigerjk9",
+  "port": 4747,
+  "includeForks": true,
+  "pollEventsSec": 30,
+  "pollRunsSec": 60,
+  "idleMinutes": 10,
+  "conflictWindowSec": 120,
+  "vacationMinutes": 20,
+  "names": {}
+}
