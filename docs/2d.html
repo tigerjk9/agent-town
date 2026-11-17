@@ -581,7 +581,7 @@ function fx(f){if(!f)return;const b=town.map.get(f.repo);if(town.isl&&town.isl.a
 function normRepo(r){return{id:r.id,name:r.name||shortName(r.id),fork:!!r.fork,private:!!r.private,pushedAt:typeof r.pushedAt==='number'?r.pushedAt:Date.parse(r.pushedAt)||0,lang:r.lang||null,desc:r.desc||'',url:r.url||('https://github.com/'+r.id),done:r.done||0,local:!!r.local}}
 function upAgent(p,instant){let a=agents.get(p.id);const isNew=!a;
  if(!a){a={id:p.id,hist:[],color:AG_COL[hash(p.id)%AG_COL.length],status:'idle',room:'lounge'};agents.set(p.id,a)}
- const oldRoom=a.room,oldDetail=a.detail,oldStatus=a.status,oldConf=a.conflict;Object.assign(a,p);if(!a.room)a.room='lounge';
+ const oldRoom=a.room,oldDetail=a.detail,oldStatus=a.status,oldConf=a.conflict;Object.assign(a,p);if(!a.room)a.room='lounge';if(!ROOMS[a.room])a.room=a.room==='lib'||a.room==='ops'?'plan':'lounge';
  if(a.detail&&a.detail!==oldDetail){a.hist.unshift({t:Date.now(),text:a.detail,room:a.room});a.hist.length=Math.min(a.hist.length,12)}
  if(a.detail==='작업 완료'&&oldDetail!=='작업 완료')a.doneCount=(a.doneCount||0)+1;
  if(a.conflict&&a.conflict!==oldConf)a.conflictCount=(a.conflictCount||0)+1;

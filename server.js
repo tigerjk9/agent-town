@@ -42,8 +42,9 @@ function state() {
   return { agentTown: true, user: GH.user, title: cfg.title, repos: [...repos.values()], agents: [...agents.values()],
     log: log.slice(0, 120), stats, vacationMinutes: cfg.vacationMinutes, github: { ok: GH.ok, token: !!GH.token, remaining: GH.remaining } };
 }
-function addLog(repo, text, kind) {
+function addLog(repo, text, kind, url) {
   const e = { t: Date.now(), repo, text, kind };
+  if (url) e.url = url;
   log.unshift(e); if (log.length > 300) log.length = 300;
   send({ type: 'log', entry: e });
 }
@@ -136,14 +137,14 @@ async function handleHook(p) {
   let a = agents.get(id);
   if (!a) {
     const name = agentName(p, repo, p.cwd);
-    a = upAgent(id, { repo, name, baseName: name.replace(/ #\d+$/, ''), kind: 'local', room: 'lounge', status: 'idle', detail: '출근' });
+    a = upAgent(id, { repo, name, baseName: name.replace(/ #\d+$/, ''), kind: 'local', sub: !!p.agent_id, room: 'lounge', status: 'idle', detail: '출근' });
     addLog(repo, '👋 ' + a.name + ' 출근', 'start');
   }
   if (a.repo !== repo) {
     const from = a.repo;
     a = upAgent(id, { repo });
     send({ type: 'fx', fx: { kind: 'trip', agent: id, from, to: repo } });
-    addLog(repo, '✈ ' + a.name + ' 출장: ' + from.split('/').pop() + ' → ' + repo.split('/').pop(), 'trip');
+    addLog(repo, '🚁 ' + a.name + ' 출장: ' + from.split('/').pop() + ' → ' + repo.split('/').pop(), 'trip');
   }
   const ev = p.hook_event_name, tool = p.tool_name || '', ti = p.tool_input || {};
   const rel = f => f ? (p.cwd && f.startsWith(p.cwd) ? f.slice(p.cwd.length).replace(/^[\\/]+/, '') : f).replace(/\\/g, '/') : '';
@@ -158,10 +159,12 @@ async function handleHook(p) {
       patch.status = 'working';
       const file = rel(ti.file_path);
       if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(tool)) { Object.assign(patch, { room: roomForFile(file), detail: '수정 중 ' + file, file }); checkConflict(repo, a, file); }
-      else if (/^(Read|Grep|Glob|LS|NotebookRead)$/.test(tool)) Object.assign(patch, { room: a.room === 'lounge' || !a.room ? 'plan' : a.room, detail: '읽는 중 ' + (file || ti.pattern || '') });
-      else if (/^(WebSearch|WebFetch)$/.test(tool)) Object.assign(patch, { room: 'plan', detail: tool === 'WebSearch' ? '검색: ' + (ti.query || '') : '웹 읽기' });
+      // 읽기·검색은 자료실(이미 개발실 등에서 일하던 중이면 그 방에서 읽는다), 웹 조사도 자료실
+      else if (/^(Read|Grep|Glob|LS|NotebookRead)$/.test(tool)) Object.assign(patch, { room: ['lounge', 'plan', 'lib', 'ops'].includes(a.room || 'lounge') ? 'lib' : a.room, detail: '읽는 중 ' + (file || ti.pattern || '') });
+      else if (/^(WebSearch|WebFetch)$/.test(tool)) Object.assign(patch, { room: 'lib', detail: tool === 'WebSearch' ? '검색: ' + (ti.query || '') : '웹 읽기' });
       else if (/^(TodoWrite|TaskCreate|TaskUpdate|ExitPlanMode)$/.test(tool)) Object.assign(patch, { room: 'plan', detail: '할 일 정리' });
-      else if (/^(Task|Agent)$/.test(tool)) Object.assign(patch, { room: 'plan', detail: '서브에이전트 호출: ' + (ti.description || ti.subagent_type || '') });
+      // 서브에이전트 호출은 작전실
+      else if (/^(Task|Agent)$/.test(tool)) Object.assign(patch, { room: 'ops', detail: '서브에이전트 호출: ' + (ti.description || ti.subagent_type || '') });
       else if (tool === 'Bash') { const cmd = (ti.command || '').replace(/\s+/g, ' '); Object.assign(patch, { room: roomForCmd(cmd) || keepRoom(), detail: '$ ' + cmd.slice(0, 60) }); }
       else if (tool.startsWith('mcp__')) {
         const nm = tool.slice(5).split('__').join(' › ');
@@ -241,7 +244,8 @@ let lastEventId = 0n, eventsPrimed = false;
 function handleEvent(e, live) {
   const repo = ensureRepo(e.repo && e.repo.name);
   const p = e.payload || {}, t = Date.parse(e.created_at) || Date.now();
-  const say = (text, kind) => { if (live) addLog(repo, text, kind); else { log.push({ t, repo, text, kind }); } };
+  const GHR = 'https://github.com/' + repo;
+  const say = (text, kind, url) => { if (live) addLog(repo, text, kind, url); else { const e = { t, repo, text, kind }; if (url) e.url = url; log.push(e); } };
   switch (e.type) {
     case 'PushEvent': {
       const branch = (p.ref || '').replace('refs/heads/', '');
@@ -249,7 +253,8 @@ function handleEvent(e, live) {
       const n = p.size != null ? p.size : commits.length;
       const last = commits[commits.length - 1];
       if (isToday(t)) stats.pushesToday++;
-      say('📦 푸시 → ' + branch + (n ? ' · 커밋 ' + n + '개' : '') + (last && last.message ? ' · ' + last.message.split('\n')[0].slice(0, 50) : ''), 'push');
+      say('📦 푸시 → ' + branch + (n ? ' · 커밋 ' + n + '개' : '') + (last && last.message ? ' · ' + last.message.split('\n')[0].slice(0, 50) : ''), 'push',
+        p.head && p.before && !/^0+$/.test(p.before) ? GHR + '/compare/' + p.before.slice(0, 12) + '...' + p.head.slice(0, 12) : GHR + '/commits/' + branch);
       if (!live) break;
       upRepo(repo, { pushedAt: Math.max(t, (repos.get(repo) || {}).pushedAt || 0) });
       send({ type: 'stats', stats });
@@ -260,28 +265,28 @@ function handleEvent(e, live) {
     }
     case 'PullRequestEvent': {
       const pr = p.pull_request || {}, no = p.number || pr.number;
-      if (p.action === 'opened') say('🔀 PR 열림 #' + no + ' ' + (pr.title || ''), 'pr');
-      else if (p.action === 'closed' && pr.merged) { say('🎉 PR 병합 #' + no + ' ' + (pr.title || ''), 'pr'); if (live) send({ type: 'fx', fx: { kind: 'confetti', repo } }); }
-      else if (p.action === 'closed') say('PR 닫힘 #' + no, 'pr');
+      if (p.action === 'opened') say('🔀 PR 열림 #' + no + ' ' + (pr.title || ''), 'pr', pr.html_url);
+      else if (p.action === 'closed' && pr.merged) { say('🎉 PR 병합 #' + no + ' ' + (pr.title || ''), 'pr', pr.html_url); if (live) send({ type: 'fx', fx: { kind: 'confetti', repo } }); }
+      else if (p.action === 'closed') say('PR 닫힘 #' + no, 'pr', pr.html_url);
       break;
     }
     case 'CreateEvent':
       if (p.ref_type === 'repository') { say('🏗 새 저장소 생성', 'create'); if (live) loadRepos(false).catch(() => {}); }
-      else if (p.ref_type === 'branch') say('🌿 새 브랜치 ' + p.ref, 'create');
+      else if (p.ref_type === 'branch') say('🌿 새 브랜치 ' + p.ref, 'create', GHR + '/tree/' + p.ref);
       break;
-    case 'ReleaseEvent': say('🚀 릴리스 ' + ((p.release && (p.release.name || p.release.tag_name)) || ''), 'release'); if (live) send({ type: 'fx', fx: { kind: 'rocket', repo } }); break;
+    case 'ReleaseEvent': say('🚀 릴리스 ' + ((p.release && (p.release.name || p.release.tag_name)) || ''), 'release', p.release && p.release.html_url); if (live) send({ type: 'fx', fx: { kind: 'rocket', repo } }); break;
     case 'WatchEvent': say('⭐ 스타 받음', 'star'); break;
     case 'ForkEvent': {
       const fk = p.forkee;
-      say('🍴 포크함 → ' + ((fk && fk.full_name) || ''), 'fork');
+      say('🍴 포크함 → ' + ((fk && fk.full_name) || ''), 'fork', fk && fk.html_url);
       if (live && fk && fk.full_name && !findRepoId(fk.full_name)) {
         const r = { id: fk.full_name, name: fk.name, fork: true, private: !!fk.private, pushedAt: Date.now(), lang: fk.language || null, desc: fk.description || '', url: fk.html_url, done: 0, local: false };
         repos.set(r.id, r); send({ type: 'repo', repo: r });
       }
       break;
     }
-    case 'IssuesEvent': if (p.action === 'opened') say('📝 이슈 열림 #' + (p.issue && p.issue.number), 'issue'); break;
-    case 'IssueCommentEvent': say('💬 댓글', 'comment'); break;
+    case 'IssuesEvent': if (p.action === 'opened') say('📝 이슈 열림 #' + (p.issue && p.issue.number), 'issue', p.issue && p.issue.html_url); break;
+    case 'IssueCommentEvent': say('💬 댓글', 'comment', p.comment && p.comment.html_url); break;
     case 'DeleteEvent': say('🧹 ' + p.ref_type + ' 삭제 ' + (p.ref || ''), 'delete'); break;
   }
 }
@@ -289,7 +294,7 @@ const cloudTimers = new Map();
 function cloudVisit(repo, branch, msg) {
   const id = 'cloud:' + repo + ':' + branch;
   upAgent(id, { repo, name: 'Claude (클라우드)', kind: 'cloud', room: 'dev', status: 'working', detail: '커밋: ' + msg.slice(0, 50) });
-  addLog(repo, '☁ 클라우드 에이전트가 ' + branch + '에 커밋', 'cloud');
+  addLog(repo, '☁ 클라우드 에이전트가 ' + branch + '에 커밋', 'cloud', 'https://github.com/' + repo + '/tree/' + branch);
   (cloudTimers.get(id) || []).forEach(clearTimeout);
   cloudTimers.set(id, [
     setTimeout(() => agents.has(id) && upAgent(id, { room: 'ship', detail: '브랜치 ' + branch + ' 푸시' }), 60000),
@@ -342,18 +347,18 @@ async function handleRun(repo, run) {
       } catch (e) {}
     }
     upAgent(id, { repo, name, kind: 'actions', room, status, detail, url: run.html_url });
-    if (!prev) addLog(repo, '⚙ 워크플로 시작: ' + name, 'run');
+    if (!prev) addLog(repo, '⚙ 워크플로 시작: ' + name, 'run', run.html_url);
     runSeen.set(run.id, 'running');
   } else if (prev === 'running') {
     runSeen.set(run.id, 'completed');
     const ok = run.conclusion === 'success';
     if (ok) {
       upAgent(id, { repo, name, kind: 'actions', room: 'lounge', status: 'idle', detail: '성공' });
-      addLog(repo, '✅ ' + name + ' 성공', 'done');
+      addLog(repo, '✅ ' + name + ' 성공', 'done', run.html_url);
       if (/pages|deploy|release|publish/i.test(name)) send({ type: 'fx', fx: { kind: 'rocket', repo } });
     } else {
       upAgent(id, { repo, name, kind: 'actions', room: 'verify', status: 'failed', detail: run.conclusion || '실패' });
-      addLog(repo, '❌ ' + name + ' ' + (run.conclusion || '실패'), 'fail');
+      addLog(repo, '❌ ' + name + ' ' + (run.conclusion || '실패'), 'fail', run.html_url);
     }
     setTimeout(() => rmAgent(id), ok ? 45000 : 120000);
   } else if (!prev) runSeen.set(run.id, 'completed');
