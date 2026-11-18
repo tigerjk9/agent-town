@@ -15,7 +15,7 @@ const file = projArg ? path.join(path.resolve(projArg.slice(10)), '.claude', 'se
 const hookPath = path.join(__dirname, 'hook.js').replace(/\\/g, '/');
 const MARK = '--agent-town';
 const command = `node "${hookPath}" ${MARK}`;
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'];
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Notification', 'Stop', 'SubagentStop', 'SessionEnd'];
 
 let settings = {};
 if (fs.existsSync(file)) {
@@ -32,7 +32,7 @@ for (const ev of EVENTS) {
   let groups = (settings.hooks[ev] || []).map(g => Object.assign({}, g, { hooks: (g.hooks || []).filter(h => !String(h.command || '').includes(MARK)) })).filter(g => g.hooks.length);
   if (!uninstall) {
     const g = { hooks: [{ type: 'command', command, timeout: 5 }] };
-    if (ev === 'PreToolUse' || ev === 'PostToolUse') g.matcher = '*';
+    if (ev === 'PreToolUse' || ev === 'PostToolUse' || ev === 'PostToolUseFailure') g.matcher = '*';
     groups.push(g);
   }
   if (groups.length) settings.hooks[ev] = groups; else delete settings.hooks[ev];

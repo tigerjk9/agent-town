@@ -31,9 +31,9 @@ process.stdin.on('end', () => {
       pattern: ti.pattern, query: ti.query, url: ti.url,
       description: ti.description, subagent_type: ti.subagent_type
     },
-    tool_error: !!(tr && typeof tr === 'object' && (tr.is_error || tr.error || tr.interrupted)),
+    tool_error: p.hook_event_name === 'PostToolUseFailure' ? !p.is_interrupt : !!(tr && typeof tr === 'object' && (tr.is_error || tr.error || tr.interrupted)),
     prompt: typeof p.prompt === 'string' ? p.prompt.slice(0, 80) : undefined,
-    message: p.message, source: p.source, reason: p.reason,
+    message: p.message, notification_type: p.notification_type, source: p.source, reason: p.reason,
     name: process.env.AGENT_TOWN_NAME
   };
   const body = JSON.stringify(slim);

@@ -173,12 +173,19 @@ async function handleHook(p) {
       break;
     }
     case 'PostToolUse':
+    case 'PostToolUseFailure':
       if (p.tool_error) { patch.detail = '오류: ' + tool; break; }
-      if (tool === 'Bash' && /\bgit\s+push\b|\bdeploy\b|npm\s+publish|gh\s+release/i.test(ti.command || '')) {
+      if (ev === 'PostToolUse' && tool === 'Bash' && /\bgit\s+push\b|\bdeploy\b|npm\s+publish|gh\s+release/i.test(ti.command || '')) {
         send({ type: 'fx', fx: { kind: 'rocket', repo } }); addLog(repo, '🚀 ' + a.name + ' 푸시/배포', 'push');
       }
       break;
-    case 'Notification': Object.assign(patch, { status: 'waiting', detail: '❗ ' + (p.message || '확인 필요').slice(0, 60) }); addLog(repo, '❗ ' + a.name + ': ' + (p.message || '확인 필요'), 'wait'); break;
+    case 'Notification': {
+      // 권한 요청과 확인 질문만 승인 대기로 친다. 입력 대기(idle_prompt)·로그인 완료(auth_success) 알림은 건너뛴다.
+      // notification_type 을 보내지 않는 예전 Claude Code 는 문구로 입력 대기 알림을 거른다.
+      const nt = p.notification_type;
+      if (nt ? !/^(permission_prompt|elicitation_dialog)$/.test(nt) : /waiting for your input/i.test(p.message || '')) return;
+      Object.assign(patch, { status: 'waiting', detail: '❗ ' + (p.message || '확인 필요').slice(0, 60) }); addLog(repo, '❗ ' + a.name + ': ' + (p.message || '확인 필요'), 'wait'); break;
+    }
     case 'Stop':
     case 'SubagentStop':
       if (ev === 'SubagentStop' && !p.agent_id) return;
